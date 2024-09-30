@@ -5,26 +5,25 @@ channels:
 
 dependencies:
   - python
-  - ffmpeg<6.1.0
+  - ffmpeg
   - imageio
-  - imageio-ffmpeg
-  - av
+  - imageio-ffmpeg >=0.5.0
   - attrs
   - pandas
   - simplejson
-  - h5py>=3.8.0
+  - h5py >=3.8.0
   - hdmf
   - numpy
-  - opencv<4.9.0
+  - opencv
   - pynwb
-  - ndx-pose
+  - ndx-pose<0.2.0
   - pytest
   - pytest-cov
   - black
   - pydocstyle
   - toml
   - twine
-  - build
+  - python-build
   - pip
   - pip:
     - "--editable=.[dev]"

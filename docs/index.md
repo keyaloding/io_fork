@@ -3,8 +3,9 @@
 [![CI](https://github.com/talmolab/sleap-io/actions/workflows/ci.yml/badge.svg)](https://github.com/talmolab/sleap-io/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/talmolab/sleap-io/branch/main/graph/badge.svg?token=Sj8kIFl3pi)](https://codecov.io/gh/talmolab/sleap-io)
 [![Release](https://img.shields.io/github/v/release/talmolab/sleap-io?label=Latest)](https://github.com/talmolab/sleap-io/releases/)
-[![PyPI](https://img.shields.io/pypi/v/sleap-io?label=PyPI)](https://pypi.org/project/sleap-io)
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/sleap-io)
+[![PyPI](https://img.shields.io/pypi/v/sleap-io?label=PyPI)](https://pypi.org/project/sleap-io)
+[![conda-forge](https://img.shields.io/conda/vn/conda-forge/sleap-io.svg)](https://anaconda.org/conda-forge/sleap-io/)
 
 Standalone utilities for working with animal pose tracking data.
 
@@ -16,6 +17,12 @@ have any functionality related to labeling, training, or inference.
 ## Installation
 ```
 pip install sleap-io
+```
+
+or
+
+```
+conda install -c conda-forge sleap-io
 ```
 
 For development, use one of the following syntaxes:
@@ -127,14 +134,16 @@ labels.save("labels.slp")
 ```py
 import sleap_io as sio
 
-labels = sio.load_file("labels.v001.slp")
+# Load labels without trying to open the video files.
+labels = sio.load_file("labels.v001.slp", open_videos=False)
 
-# Fix paths using prefixes.
+# Fix paths using prefix replacement.
 labels.replace_filenames(prefix_map={
     "D:/data/sleap_projects": "/home/user/sleap_projects",
     "C:/Users/sleaper/Desktop/test": "/home/user/sleap_projects",
 })
 
+# Save labels with updated paths.
 labels.save("labels.v002.slp")
 ```
 

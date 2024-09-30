@@ -24,12 +24,11 @@ dependencies = [
     "attrs",
     "h5py>=3.8.0",
     "pynwb",
-    "ndx-pose",
+    "ndx-pose<0.2.0",
     "pandas",
     "simplejson",
     "imageio",
-    "imageio-ffmpeg",
-    "av"]
+    "imageio-ffmpeg>=0.5.0"]
 dynamic = ["version", "readme"]
 
 [tool.setuptools.dynamic]
@@ -50,7 +49,9 @@ dev = [
     "mkdocs-jupyter",
     "mkdocstrings[python]>=0.18",
     "mkdocs-gen-files",
-    "mkdocs-literate-nav"]
+    "mkdocs-literate-nav",
+    "mkdocs-section-index",
+    "mike"]
 
 [project.urls]
 Homepage = "https://io.sleap.ai"
@@ -65,9 +66,3 @@ line-length = 88
 [pydocstyle]
 convention = "google"
 match-dir = "sleap_io"
-
-[tool.coverage.run]
-source = ["livecov"]
-
-[tool.pytest.ini_options]
-addopts = "--cov sleap_io --cov-report=lcov:lcov.info --cov-report=term"
