@@ -8,7 +8,7 @@ from __future__ import annotations
 import attrs
 from typing import Tuple, Optional, Optional
 import numpy as np
-from sleap_io.io.video import VideoBackend, MediaVideo, HDF5Video, ImageVideo
+from sleap_io.io.video_reading import VideoBackend, MediaVideo, HDF5Video, ImageVideo
 from sleap_io.io.utils import is_file_accessible
 from pathlib import Path
 
@@ -60,7 +60,12 @@ class Video:
     def __attrs_post_init__(self):
         """Post init syntactic sugar."""
         if self.open_backend and self.backend is None and self.exists():
-            self.open()
+            try:
+                self.open()
+            except Exception as e:
+                # If we can't open the backend, just ignore it for now so we don't
+                # prevent the user from building the Video object entirely.
+                pass
 
     @classmethod
     def from_filename(
@@ -138,7 +143,10 @@ class Video:
         if shape is not None:
             return shape[-1] == 1
         else:
-            return self.backend_metadata.get("grayscale", None)
+            grayscale = None
+            if "grayscale" in self.backend_metadata:
+                grayscale = self.backend_metadata["grayscale"]
+            return grayscale
 
     @grayscale.setter
     def grayscale(self, value: bool):
@@ -266,8 +274,11 @@ class Video:
         else:
             if dataset is None and "dataset" in self.backend_metadata:
                 dataset = self.backend_metadata["dataset"]
-            if grayscale is None and "grayscale" in self.backend_metadata:
-                grayscale = self.backend_metadata["grayscale"]
+            if grayscale is None:
+                if "grayscale" in self.backend_metadata:
+                    grayscale = self.backend_metadata["grayscale"]
+                elif "shape" in self.backend_metadata:
+                    grayscale = self.backend_metadata["shape"][-1] == 1
 
         # Close previous backend if open.
         self.close()
@@ -305,6 +316,7 @@ class Video:
             ]
 
         self.filename = new_filename
+        self.backend_metadata["filename"] = new_filename
 
         if open:
             if self.exists():

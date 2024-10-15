@@ -20,7 +20,7 @@ from sleap_io import (
     LabeledFrame,
     Labels,
 )
-from sleap_io.io.video import VideoBackend, ImageVideo, MediaVideo, HDF5Video
+from sleap_io.io.video_reading import VideoBackend, ImageVideo, MediaVideo, HDF5Video
 from sleap_io.io.utils import read_hdf5_attrs, read_hdf5_dataset, is_file_accessible
 from enum import IntEnum
 from pathlib import Path
@@ -60,7 +60,6 @@ def sanitize_filename(
 def make_video(
     labels_path: str,
     video_json: dict,
-    video_ind: int | None = None,
     open_backend: bool = True,
 ) -> Video:
     """Create a `Video` object from a JSON dictionary.
@@ -68,8 +67,6 @@ def make_video(
     Args:
         labels_path: A string path to the SLEAP labels file.
         video_json: A dictionary containing the video metadata.
-        video_ind: The index of the video in the labels file. This is used to try to
-            recover the source video for embedded videos. This is skipped if `None`.
         open_backend: If `True` (the default), attempt to open the video backend for
             I/O. If `False`, the backend will not be opened (useful for reading metadata
             when the video files are not available).
@@ -90,14 +87,16 @@ def make_video(
     if is_embedded:
         # Try to recover the source video.
         with h5py.File(labels_path, "r") as f:
-            if f"video{video_ind}" in f:
+            dataset = backend_metadata["dataset"]
+            if dataset.endswith("/video"):
+                dataset = dataset[:-6]
+            if dataset in f:
                 source_video_json = json.loads(
-                    f[f"video{video_ind}/source_video"].attrs["json"]
+                    f[f"{dataset}/source_video"].attrs["json"]
                 )
                 source_video = make_video(
                     labels_path,
                     source_video_json,
-                    video_ind=None,
                     open_backend=open_backend,
                 )
 
@@ -126,10 +125,15 @@ def make_video(
             video_path = [Path(sanitize_filename(p)) for p in video_path]
 
         try:
+            grayscale = None
+            if "grayscale" in backend_metadata:
+                grayscale = backend_metadata["grayscale"]
+            elif "shape" in backend_metadata:
+                grayscale = backend_metadata["shape"][-1] == 1
             backend = VideoBackend.from_filename(
                 video_path,
                 dataset=backend_metadata.get("dataset", None),
-                grayscale=backend_metadata.get("grayscale", None),
+                grayscale=grayscale,
                 input_format=backend_metadata.get("input_format", None),
             )
         except Exception:
@@ -157,13 +161,10 @@ def read_videos(labels_path: str, open_backend: bool = True) -> list[Video]:
         A list of `Video` objects.
     """
     videos = []
-    for video_ind, video_data in enumerate(
-        read_hdf5_dataset(labels_path, "videos_json")
-    ):
+    videos_metadata = read_hdf5_dataset(labels_path, "videos_json")
+    for video_data in videos_metadata:
         video_json = json.loads(video_data)
-        video = make_video(
-            labels_path, video_json, video_ind=video_ind, open_backend=open_backend
-        )
+        video = make_video(labels_path, video_json, open_backend=open_backend)
         videos.append(video)
     return videos
 
@@ -208,6 +209,7 @@ def video_to_dict(video: Video) -> dict:
                 "input_format": video.backend.input_format,
                 "convert_range": False,
                 "has_embedded_images": video.backend.has_embedded_images,
+                "grayscale": video.grayscale,
             },
         }
 
@@ -268,10 +270,10 @@ def embed_video(
                     cv2.imencode("." + image_format, frame)[1]
                 ).astype("int8")
             else:
+                if frame.shape[-1] == 1:
+                    frame = frame.squeeze(axis=-1)
                 img_data = np.frombuffer(
-                    iio.imwrite(
-                        "<bytes>", frame.squeeze(axis=-1), extension="." + image_format
-                    ),
+                    iio.imwrite("<bytes>", frame, extension="." + image_format),
                     dtype="int8",
                 )
 
@@ -304,12 +306,13 @@ def embed_video(
 
         # Store metadata.
         ds.attrs["format"] = image_format
+        video_shape = video.shape
         (
             ds.attrs["frames"],
             ds.attrs["height"],
             ds.attrs["width"],
             ds.attrs["channels"],
-        ) = video.shape
+        ) = video_shape
 
         # Store frame indices.
         f.create_dataset(f"{group}/frame_numbers", data=frame_inds)
@@ -318,20 +321,20 @@ def embed_video(
         if video.source_video is not None:
             # If this is already an embedded dataset, retain the previous source video.
             source_video = video.source_video
-            embedded_video = video
-            video.replace_filename(labels_path, open=False)
         else:
             source_video = video
-            embedded_video = Video(
-                filename=labels_path,
-                backend=VideoBackend.from_filename(
-                    labels_path,
-                    dataset=f"{group}/video",
-                    grayscale=video.grayscale,
-                    keep_open=False,
-                ),
-                source_video=source_video,
-            )
+
+        # Create a new video object with the embedded data.
+        embedded_video = Video(
+            filename=labels_path,
+            backend=VideoBackend.from_filename(
+                labels_path,
+                dataset=f"{group}/video",
+                grayscale=video.grayscale,
+                keep_open=False,
+            ),
+            source_video=source_video,
+        )
 
         grp = f.require_group(f"{group}/source_video")
         grp.attrs["json"] = json.dumps(
@@ -367,7 +370,7 @@ def embed_frames(
         to_embed_by_video[video].append(frame_idx)
 
     for video in to_embed_by_video:
-        to_embed_by_video[video] = np.unique(to_embed_by_video[video])
+        to_embed_by_video[video] = np.unique(to_embed_by_video[video]).tolist()
 
     replaced_videos = {}
     for video, frame_inds in to_embed_by_video.items():
@@ -444,7 +447,6 @@ def write_videos(labels_path: str, videos: list[Video], restore_source: bool = F
     """
     video_jsons = []
     for video_ind, video in enumerate(videos):
-
         if type(video.backend) == HDF5Video and video.backend.has_embedded_images:
             if restore_source:
                 video = video.source_video
@@ -1067,7 +1069,7 @@ def read_labels(labels_path: str, open_videos: bool = True) -> Labels:
         labeled_frames.append(
             LabeledFrame(
                 video=videos[video_id],
-                frame_idx=frame_idx,
+                frame_idx=int(frame_idx),
                 instances=instances[instance_id_start:instance_id_end],
             )
         )
@@ -1112,6 +1114,7 @@ def write_labels(
     """
     if Path(labels_path).exists():
         Path(labels_path).unlink()
+
     if embed:
         embed_videos(labels_path, labels, embed)
     write_videos(labels_path, labels.videos, restore_source=(embed == "source"))
