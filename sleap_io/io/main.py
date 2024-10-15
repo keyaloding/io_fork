@@ -6,8 +6,6 @@ from sleap_io.io import slp, nwb, labelstudio, jabs
 from typing import Optional, Union
 from pathlib import Path
 
-from pynwb import NWBHDF5IO
-
 
 def load_slp(filename: str) -> Labels:
     """Load a SLEAP dataset.
